@@ -231,122 +231,121 @@
     </div>
 
 
-    <script>
+<script>
+async function generateNames() {
+    const business = document.getElementById("businessInput").value.trim();
+    const style = document.getElementById("styleInput").value;
+    const result = document.getElementById("result");
 
-        async function generateNames() {
+    if (!business) {
+        result.textContent = "Please enter a business type.";
+        result.className = "error";
+        return;
+    }
 
-            const business =
-                document.getElementById("businessInput").value.trim();
+    result.className = "";
+    result.textContent = "✨ AI is generating names, meanings and taglines...";
 
-            const style =
-                document.getElementById("styleInput").value;
-
-            const result =
-                document.getElementById("result");
-
-
-            if (business === "") {
-
-                result.innerHTML =
-                    '<p class="error">Please enter a business type.</p>';
-
-                return;
+    try {
+        const response = await fetch(
+            "https://bizname-ai.onrender.com/generate",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ business, style })
             }
+        );
 
+        const data = await response.json();
 
-            result.innerHTML =
-                '<div class="loading">✨ AI is generating creative names...</div>';
-
-
-            try {
-
-                const response = await fetch(
-                    "https://bizname-ai.onrender.com/generate",
-                    {
-                        method: "POST",
-
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
-
-                        body: JSON.stringify({
-                            business: business,
-                            style: style
-                        })
-                    }
-                );
-
-
-                const data = await response.json();
-
-
-                if (data.error) {
-
-                    result.innerHTML =
-                        '<p class="error">Something went wrong.</p>';
-
-                    return;
-                }
-
-
-                const names =
-                    data.names
-                        .split("\n")
-                        .map(name => name.trim())
-                        .filter(name => name !== "");
-
-
-                result.innerHTML =
-                    "<h3>✨ AI Name Ideas</h3>";
-
-
-                names.forEach(function(name) {
-
-                    const cleanName =
-                        name.replace(/^\d+[\.\)\-\s]+/, "");
-
-
-                    result.innerHTML += `
-
-                        <div class="name-card">
-
-                            <div class="name-text">
-                                ${cleanName}
-                            </div>
-
-                            <button
-                                class="copy-btn"
-                                onclick="copyName('${cleanName.replace(/'/g, "\\'")}')"
-                            >
-                                📋 Copy
-                            </button>
-
-                        </div>
-
-                    `;
-
-                });
-
-            }
-
-            catch (error) {
-
-                result.innerHTML =
-                    '<p class="error">Could not connect to AI server.</p>';
-
-                console.error(error);
-            }
-
+        if (!response.ok || data.error) {
+            throw new Error(data.error || "AI request failed.");
         }
 
+        const ideas = Array.isArray(data.ideas)
+            ? data.ideas
+            : (data.names || "")
+                .split("\n")
+                .filter(Boolean)
+                .map(name => ({
+                    name: name.replace(/^\d+[\.\)\-\s]+/, ""),
+                    meaning: "",
+                    tagline: "",
+                    vibe: ""
+                }));
 
-        function copyName(name) {
-
-            navigator.clipboard.writeText(name);
-
-            alert("✅ Name copied!");
-
+        if (!ideas.length) {
+            throw new Error("No names were returned. Please try again.");
         }
+
+        result.replaceChildren();
+
+        const heading = document.createElement("h3");
+        heading.textContent = "✨ Your AI Brand Ideas";
+        result.appendChild(heading);
+
+        ideas.forEach(idea => {
+            const card = document.createElement("div");
+            card.className = "name-card";
+            card.style.flexDirection = "column";
+            card.style.alignItems = "stretch";
+
+            const name = document.createElement("div");
+            name.className = "name-text";
+            name.textContent = idea.name;
+            card.appendChild(name);
+
+            if (idea.meaning) {
+                const meaning = document.createElement("p");
+                meaning.textContent = "💡 " + idea.meaning;
+                card.appendChild(meaning);
+            }
+
+            if (idea.tagline) {
+                const tagline = document.createElement("p");
+                tagline.textContent = "✨ " + idea.tagline;
+                tagline.style.fontStyle = "italic";
+                card.appendChild(tagline);
+            }
+
+            if (idea.vibe) {
+                const vibe = document.createElement("p");
+                vibe.textContent = "🎨 Brand vibe: " + idea.vibe;
+                card.appendChild(vibe);
+            }
+
+            const copyButton = document.createElement("button");
+            copyButton.className = "copy-btn";
+            copyButton.textContent = "📋 Copy Name";
+            copyButton.addEventListener("click", () => copyName(idea.name));
+            card.appendChild(copyButton);
+
+            result.appendChild(card);
+        });
+
+    } catch (error) {
+        console.error(error);
+        result.replaceChildren();
+
+        const message = document.createElement("p");
+        message.className = "error";
+        message.textContent = error.message ||
+            "Could not connect to AI server. Please try again.";
+        result.appendChild(message);
+    }
+}
+
+async function copyName(name) {
+    try {
+        await navigator.clipboard.writeText(name);
+        alert("✅ Name copied!");
+    } catch (error) {
+        alert("Copy didn't work. Please select and copy the name manually.");
+    }
+}
+
 
     </script>
 

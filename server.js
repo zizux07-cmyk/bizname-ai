@@ -1,3 +1,4 @@
+
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -11,18 +12,16 @@ const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
 
     if (req.method === "OPTIONS") {
         res.writeHead(204);
         return res.end();
     }
 
-    // Show website homepage
     if (req.method === "GET" && req.url === "/") {
-        const filePath = path.join(__dirname, "index.html");
-
-        fs.readFile(filePath, (error, content) => {
-            if (error) {
+        fs.readFile(path.join(__dirname, "index.html"), (err, content) => {
+            if (err) {
                 res.writeHead(500);
                 return res.end("Could not load website.");
             }
@@ -30,62 +29,123 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, {
                 "Content-Type": "text/html; charset=utf-8"
             });
-
             res.end(content);
         });
-
         return;
     }
 
-    // Generate AI business names
     if (req.method === "POST" && req.url === "/generate") {
         let body = "";
+        let tooLarge = false;
 
         req.on("data", chunk => {
             body += chunk;
+
+            if (body.length > 10000) {
+                tooLarge = true;
+                res.writeHead(413);
+                res.end(JSON.stringify({
+                    error: "Request is too large."
+                }));
+                req.destroy();
+            }
         });
 
         req.on("end", async () => {
+            if (tooLarge) return;
+
             try {
                 const data = JSON.parse(body);
+                const business = String(data.business || "").trim();
+                const style = String(data.style || "").trim().toLowerCase();
 
-                if (!data.business || !data.style) {
-                    res.writeHead(400, {
-                        "Content-Type": "application/json"
-                    });
+                const allowedStyles = [
+                    "modern", "premium", "fun", "minimal"
+                ];
 
+                if (!business || business.length > 100 ||
+                    !allowedStyles.includes(style)) {
+                    res.writeHead(400);
                     return res.end(JSON.stringify({
-                        error: "Business type and style are required."
+                        error: "Enter a valid business type and style."
                     }));
                 }
 
                 const response = await client.responses.create({
+                    // Keep your currently working model unchanged.
                     model: "gpt-6-luna",
-                    input: `Generate 5 creative business name ideas.
+                    input: `You are a professional brand naming expert.
 
-Business type: ${data.business}
-Style: ${data.style}
+Create exactly 10 creative business names.
 
-Return only 5 name ideas, one per line.`
+Business type: ${business}
+Style: ${style}
+
+For every idea provide:
+- name: short, memorable business name
+- meaning: a brief explanation of the name
+- tagline: a catchy short slogan
+- vibe: brand personality in a few words
+
+Return only valid JSON in this exact structure:
+{
+  "ideas": [
+    {
+      "name": "Example Name",
+      "meaning": "Brief explanation",
+      "tagline": "A short slogan",
+      "vibe": "Modern and premium"
+    }
+  ]
+}
+
+Do not use markdown fences. Keep every field concise.
+The ideas must fit the requested business type and style.`
                 });
 
-                res.writeHead(200, {
-                    "Content-Type": "application/json"
-                });
+                let parsed;
 
+                try {
+                    parsed = JSON.parse(response.output_text);
+                } catch {
+                    throw new Error("AI returned invalid JSON.");
+                }
+
+                if (!Array.isArray(parsed.ideas) ||
+                    parsed.ideas.length === 0) {
+                    throw new Error("AI returned no name ideas.");
+                }
+
+                const ideas = parsed.ideas
+                    .filter(item =>
+                        item &&
+                        typeof item.name === "string" &&
+                        item.name.trim()
+                    )
+                    .slice(0, 10)
+                    .map(item => ({
+                        name: item.name.trim(),
+                        meaning: String(item.meaning || ""),
+                        tagline: String(item.tagline || ""),
+                        vibe: String(item.vibe || "")
+                    }));
+
+                if (!ideas.length) {
+                    throw new Error("AI returned no valid names.");
+                }
+
+                res.writeHead(200);
                 res.end(JSON.stringify({
-                    names: response.output_text
+                    names: ideas.map(item => item.name).join("\n"),
+                    ideas
                 }));
 
             } catch (error) {
-                console.error(error);
+                console.error("Generation failed:", error.message);
 
-                res.writeHead(500, {
-                    "Content-Type": "application/json"
-                });
-
+                res.writeHead(500);
                 res.end(JSON.stringify({
-                    error: "AI request failed."
+                    error: "AI generation failed. Please try again."
                 }));
             }
         });
@@ -94,9 +154,8 @@ Return only 5 name ideas, one per line.`
     }
 
     res.writeHead(404, {
-        "Content-Type": "text/plain"
+        "Content-Type": "text/plain; charset=utf-8"
     });
-
     res.end("Not Found");
 });
 
